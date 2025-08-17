@@ -2,8 +2,6 @@
 
 A proof-of-concept implementation of an open-vocabulary object detector that can locate any object in an image using natural language descriptions, powered by OpenAI's CLIP model.
 
-![Demo GIF of the object detector in action]
-
 ---
 
 ## ## Overview
