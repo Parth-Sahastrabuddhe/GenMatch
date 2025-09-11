@@ -3,10 +3,10 @@ from PIL import Image
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+import cv2
 TF_ENABLE_ONEDNN_OPTS=0
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {device}")
 model_name = "openai/clip-vit-base-patch32"
 model = CLIPModel.from_pretrained(model_name).to(device)
 processor = CLIPProcessor.from_pretrained(model_name)
@@ -25,6 +25,24 @@ def image_patch(img, patch_size =(100, 100), stride = 2):
 
     return patches
 
+def bounding_box(img, heatmap):
+
+    img_copy = np.array(img).copy()
+
+    normalized = cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+
+    _, binary = cv2.threshold(normalized, 200, 255, cv2.THRESH_BINARY)
+
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if contours:
+        largest = max(contours, key=cv2.contourArea)
+
+        x, y, w, h = cv2.boundingRect(largest)
+        cv2.rectangle(img_copy, (x, y), (x + w, y + h), (255, 0, 0), 2)
+    
+    return img_copy
+
 def main():
 
     print("Starting the object detection process...")
@@ -32,7 +50,7 @@ def main():
     img_path = r"C:\Users\sahas\OneDrive\Desktop\GenMatch\Photo of a dog.jpg"
 
     score_patches = []
-    prompt = ["a photo of a human", "a photo of a dog"]
+    prompt = ["a photo of a human", "a close up of a dog's face"]
 
     try:
 
@@ -73,10 +91,18 @@ def main():
         ax.axis('off')
         plt.show()
 
+        print("Genrating images with bounding box")
+
+        box_img = bounding_box(img, heatmap)
+
+        plt.imshow(box_img)
+        plt.axis('off')
+        plt.show()
+
 
     except FileNotFoundError:
         print(f"Error opening image: {img_path}")
         return
 
-if main() == "__main__":
+if __name__ == "__main__":
     main()
