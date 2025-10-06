@@ -28,6 +28,7 @@ def image_patch(img, patch_size =(100, 100), stride = 2):
 def bounding_box(img, heatmap):
 
     img_copy = np.array(img).copy()
+    found = False
 
     normalized = cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
 
@@ -40,69 +41,126 @@ def bounding_box(img, heatmap):
 
         x, y, w, h = cv2.boundingRect(largest)
         cv2.rectangle(img_copy, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        found = True
     
-    return img_copy
+    return img_copy, found
 
-def main():
+# def main():
+
+#     print("Starting the object detection process...")
+
+#     img_path = r"C:\Users\sahas\OneDrive\Desktop\GenMatch\Photo of a dog.jpg"
+
+#     score_patches = []
+#     prompt = ["a photo of a human", "a close up of a dog's face"]
+
+#     try:
+
+#         # Open the image
+#         img = Image.open(img_path)
+#         print(f"Image opened successfully: {img_path}")
+
+#         # Extract patches from the image
+#         patches = image_patch(img)
+#         print(f"Extracted {len(patches)} patches from the image.")
+
+#         # Process all patches with the CLIP model to get the probabilities
+#         patch_batch = [p for p, (x, y) in patches]
+#         input = processor(text=prompt, images=patch_batch, return_tensors="pt", padding=True)
+#         input = {k: v.to(device) for k, v in input.items()}
+#         with torch.no_grad():
+#             output = model(**input)
+
+#         logits = output.logits_per_image
+#         prob = logits.softmax(dim=1)
+
+#         for i, (patch, (x, y)) in enumerate(patches):
+#             score = prob[i][0].item()
+#             score_patches.append((patch, (x, y), score))
+
+#         # Create heatmap based on scores
+#         img_h, img_w = img.size
+#         pat_h, pat_w = patches[0][0].size
+
+#         heatmap = np.zeros((img_h, img_w))
+
+#         for _, (x, y), score in score_patches:
+#             heatmap[y:y + pat_h, x:x + pat_w] += score
+        
+#         fig, ax = plt.subplots()
+#         ax.imshow(img)
+#         ax.imshow(heatmap, cmap='viridis', alpha=0.6)
+#         ax.axis('off')
+#         plt.show()
+
+#         print("Genrating images with bounding box")
+
+#         box_img = bounding_box(img, heatmap)
+
+#         plt.imshow(box_img)
+#         plt.axis('off')
+#         plt.show()
+
+
+#     except FileNotFoundError:
+#         print(f"Error opening image: {img_path}")
+#         return
+
+# if __name__ == "__main__":
+#     main()
+
+def run_detection_pipeline(input_image, text_prompt):
 
     print("Starting the object detection process...")
 
-    img_path = r"C:\Users\sahas\OneDrive\Desktop\GenMatch\Photo of a dog.jpg"
-
+    img = input_image
+    prompt = [text_prompt, "a photo of a blank background"]
     score_patches = []
-    prompt = ["a photo of a human", "a close up of a dog's face"]
+    all_scores = []
+    
+    patches = image_patch(img)
+    print(f"Extracted {len(patches)} patches from the image.")
 
-    try:
+    patch_batch = [p for p, (x, y) in patches]
+    input_data = processor(text=prompt, images=patch_batch, return_tensors="pt", padding=True)
+    input_data = {k: v.to(device) for k, v in input_data.items()}
+    with torch.no_grad():
+        output = model(**input_data)
 
-        # Open the image
-        img = Image.open(img_path)
-        print(f"Image opened successfully: {img_path}")
+    logits = output.logits_per_image
+    prob = logits.softmax(dim=1)
 
-        # Extract patches from the image
-        patches = image_patch(img)
-        print(f"Extracted {len(patches)} patches from the image.")
+    for i, (patch, (x, y)) in enumerate(patches):
+        score = prob[i][0].item()
+        score_patches.append((patch, (x, y), score))
+        all_scores.append(score)
+    
+    confidence_threshold = 0.20
+    max_score = max(all_scores) if all_scores else 0
+    print(f"Max confidence score: {max_score:.4f}")
 
-        # Process all patches with the CLIP model to get the probabilities
-        patch_batch = [p for p, (x, y) in patches]
-        input = processor(text=prompt, images=patch_batch, return_tensors="pt", padding=True)
-        input = {k: v.to(device) for k, v in input.items()}
-        with torch.no_grad():
-            output = model(**input)
+    if max_score < confidence_threshold:
+        msg = f"Could not find '{text_prompt}' with enough confidence."
+        return msg, input_image
 
-        logits = output.logits_per_image
-        prob = logits.softmax(dim=1)
+    img_h, img_w = img.size
 
-        for i, (patch, (x, y)) in enumerate(patches):
-            score = prob[i][0].item()
-            score_patches.append((patch, (x, y), score))
+    if not patches:
+        print("Warning: No patches were extracted from the image.")
+        return img
 
-        # Create heatmap based on scores
-        img_h, img_w = img.size
-        pat_h, pat_w = patches[0][0].size
+    pat_h, pat_w = patches[0][0].size
+    heatmap = np.zeros((img_h, img_w))
 
-        heatmap = np.zeros((img_h, img_w))
+    for _, (x, y), score in score_patches:
+        heatmap[y:y + pat_h, x:x + pat_w] += score
+    
+    print("Generating image with bounding box...")
+    box_img, found = bounding_box(img, heatmap)
 
-        for _, (x, y), score in score_patches:
-            heatmap[y:y + pat_h, x:x + pat_w] += score
-        
-        fig, ax = plt.subplots()
-        ax.imshow(img)
-        ax.imshow(heatmap, cmap='viridis', alpha=0.6)
-        ax.axis('off')
-        plt.show()
+    if not found:
+        msg = "No object detected matching the prompt."
+    else:
+        msg = "Object detected and highlighted."
 
-        print("Genrating images with bounding box")
-
-        box_img = bounding_box(img, heatmap)
-
-        plt.imshow(box_img)
-        plt.axis('off')
-        plt.show()
-
-
-    except FileNotFoundError:
-        print(f"Error opening image: {img_path}")
-        return
-
-if __name__ == "__main__":
-    main()
+    return msg, Image.fromarray(box_img)
